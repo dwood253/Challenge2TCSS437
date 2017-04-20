@@ -6,10 +6,26 @@
 
 
 
+void testSonar () {
+	int val = getDistanceValue(sonar);
+	writeDebugStreamLine("sonar val = %d", val);
+}
+
+void testColor () {
+	setColorMode(colorLeft, colorTypeGrayscale_Reflected);
+	setColorMode(colorRight, colorTypeGrayscale_Reflected);
+
+	int val = getColorGrayscale(colorLeft),
+	    val2 = getColorGrayscale(colorRight);
+	writeDebugStreamLine("color left is %d, and color right is %d", val, val2);
+}
 
 task main()
 {
-
+	while (true) {
+		testSonar();
+		//testColor();
+	}
 
 
 }
