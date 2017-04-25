@@ -6,9 +6,12 @@
 
 #define COLOR_SENSOR_AVERAGE_BUFFER_LEN 10
 #define SONAR_SENSOR_AVERAGE_BUFFER_LEN 10
-#define COLOR_LOWER_BOUND 20
-#define COLOR_UPPER_BOUND 60
 
+#define LOW_SPEED_WANDER 40
+#define HI_SPEED_WANDER 30
+
+int COLOR_LOWER_BOUND = 20;
+int COLOR_UPPER_BOUND = 60;
 
 float avgColorLeft = 0,
 			avgColorRight = 0,
@@ -45,20 +48,21 @@ float getMovingAvg (float lastAvg, float alpha, int newestReading) {
 }
 
 void getColorAvg () {
-	avgColorLeft = getMovingAvg(avgColorLeft, 30 / 55.0, getColorReflected(colorLeft));
-	avgColorRight = getMovingAvg(avgColorRight, 30 / 55.0, getColorReflected(colorRight));
+	avgColorLeft = getMovingAvg(avgColorLeft, 40 / 55.0, getColorReflected(colorLeft));
+	avgColorRight = getMovingAvg(avgColorRight, 40 / 55.0, getColorReflected(colorRight));
+	writeDebugStreamLine("avg c l: %f, avg c r: %f, avg dist: %f", avgColorLeft, avgColorRight, avgDist);
 }
 
 //this is for wondering right
 void randomRight() {
-	setMotorSpeed(leftMotor, 60);
-	setMotorSpeed(rightMotor, 50);
+	setMotorSpeed(leftMotor, HI_SPEED_WANDER);
+	setMotorSpeed(rightMotor, LOW_SPEED_WANDER);
 }
 
 //this is for wondering left
 void randomLeft() {
-	setMotorSpeed(leftMotor, 50);
-	setMotorSpeed(rightMotor, 60);
+	setMotorSpeed(leftMotor, LOW_SPEED_WANDER);
+	setMotorSpeed(rightMotor, HI_SPEED_WANDER);
 }
 
 //this is the random walking task.
@@ -93,43 +97,33 @@ task randomWalk() {
 	}
 }
 
+//Are we off the line?
+bool offline () {
+	getColorAvg();
+	return avgColorLeft - COLOR_LOWER_BOUND > 10 && avgColorRight - COLOR_LOWER_BOUND > 10;
+}
+
+
 bool acquireLine () {
 	bool acquired = false;
+	mv(-20, 0);
+  writeDebugStreamLine("Turning left");
+	for (int i = 0; i < 5 && !acquired; i++) {
+		//rotate left about 100
+		acquired = !offline();
 
-		//Rotate left until both sensors are on or off
+		delay(100);
+  }
 
-		//If both sensors go off, rotate right, if both are on, proceed straight
-	  //Rotate right until both sensors a
+  mv(0, -20);
+  //writeDebugStreamLine("Turning right");
+  for (int i = 0; i < 10 && !acquired; i++) {
+		//then rotate right 200
+    acquired = !offline();
 
-		mv(-10, 10);
+		delay(100);
+  }
 
-		for (int i = 0; i < 10; i++) {
-			if (allBlack()) {
-				acquired = true;
-				return true;
-		  } else if (allWhite()) {
-		    break;
-		  }
-
-  writeDebugStreamLine("avg c l: %f, avg c r: %f, avg dist: %f", avgColorLeft, avgColorRight, avgDist);
-		  getColorAvg();
-			delay(100);
-	  }
-
-	  mv(10, -10);
-
-		for (int i = 0; i < 20; i++) {
-			if (allBlack()) {
-				acquired = true;
-				return true;
-		  } else if (allWhite()) {
-		    break;
-		  }
-
-  writeDebugStreamLine("avg c l: %f, avg c r: %f, avg dist: %f", avgColorLeft, avgColorRight, avgDist);
-		  getColorAvg();
-			delay(100);
-	  }
   return acquired;
 }
 
@@ -141,25 +135,59 @@ void followLine () {
 	}
 }
 
+
+void setMotorSpeedBasedOnLightSensor() {
+	int baseSpeed = 10;
+
+	if (avgColorLeft - avgColorRight > 10) {
+		//this means go right
+	  mv(15, -5);
+  } else if (avgColorRight - avgColorLeft > 10) {
+  	//go left
+  	mv(-5, 15);
+  } else {
+   	//go straight
+		mv(17, 17);
+  }
+
+}
+
 //Priority 1
 //Kill wander task to follow line
 //Black is approximately 10 +- 5
 //White is approximately 70 +- 10
 task lineFollow () {
 	while (true) {
-		if (avgColorLeft < COLOR_LOWER_BOUND || avgColorRight < COLOR_UPPER_BOUND) {
+		if (avgColorLeft < COLOR_LOWER_BOUND || avgColorRight < COLOR_LOWER_BOUND) {
 			setLEDColor(ledRedFlash);
 			stopTask(randomWalk);
-			bool acquired = acquireLine();
+			bool online = true;
+			int offlineCount = 0;
+			while (online) {
+				setMotorSpeedBasedOnLightSensor();
+				delay(100);
+				getColorAvg();
 
-  writeDebugStreamLine("avg c l: %f, avg c r: %f, avg dist: %f", avgColorLeft, avgColorRight, avgDist);
-			mv(20, 20);
+				if (offline()) {
+					setLEDColor(ledGreen);
+					offlineCount += 1;
+			  } else {
+			    offlineCount = 0;
+			  }
 
-			setLEDColor(ledOrangeFlash);
-			delay(1000);
+			  if (offlineCount > 4) {
+			  	acquireLine();
+			  }
+
+			  if (offlineCount > 10) {
+			  	setLEDColor(ledGreenFlash);
+			  	goto out;
+			  }
+		  }
 
 			//followLine();
 			//DO the right thing
+		  out:
 			startTask(randomWalk);
 		}
 		getColorAvg();
@@ -221,8 +249,36 @@ void setupAverages () {
   writeDebugStreamLine("avg c l: %f, avg c r: %f, avg dist: %f", avgColorLeft, avgColorRight, avgDist);
 }
 
+void calBlack() {
+	for (int i = 0; i < 10; i++) {
+		getColorAvg();
+	  delay(100);
+  }
+
+  COLOR_LOWER_BOUND = ((avgColorLeft + avgColorRight) / 2) + 10;
+}
+
+void calWhite() {
+	for (int i = 0; i < 10; i++) {
+		getColorAvg();
+	  delay(100);
+  }
+
+  COLOR_UPPER_BOUND = ((avgColorLeft + avgColorRight) / 2) - 10;
+}
+
 task main()
 {
+
+
+	setLEDColor(ledGreenFlash);
+  delay(2000);
+	calWhite();
+
+	setLEDColor(ledOrangeFlash);
+	delay(2000);
+	calBlack();
+
 
 //	startTask(objectDetect);
 	startTask(lineFollow);
