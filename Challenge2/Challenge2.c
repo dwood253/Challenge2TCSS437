@@ -164,7 +164,32 @@ task lineFollow () {
   }
 }
 
+//this is making robot to do a random left turn.
+void turnLeft() {
+	long turnTime = 450;
+	setMotorSpeed(leftMotor, -55);
+	setMotorSpeed(rightMotor, 55);
+	wait1Msec(turnTime);
+}
 
+//this is making robot to do a random left turn.
+void turnRight() {
+	long turnTime = 450;
+	setMotorSpeed(leftMotor, 55);
+	setMotorSpeed(rightMotor, -55);
+	wait1Msec(turnTime);
+}
+
+//this will give robot a random direction.
+void randomDir() {
+	long turnProb = 0;
+	turnProb = rand() % 100;
+	if(turnProb < 50) {
+		turnLeft();
+	} else {
+		turnRight();
+	}
+}
 //Priority 0
 //Kill line detection to chase object and kill wander
 //3 feet is approximately 90 from the getDistance function
@@ -232,7 +257,7 @@ task main()
 	calBlack();
 
 
-//	startTask(objectDetect);
+  startTask(objectDetect);
 	startTask(lineFollow);
 	startTask(randomWalk);
 	//startTask(getColorAvg);
