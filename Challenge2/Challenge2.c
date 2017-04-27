@@ -199,13 +199,33 @@ task lineFollow () {
 //Kill line detection to chase object and kill wander
 //3 feet is approximately 90 from the getDistance function
 task objectDetect () {
-	stopTask(lineFollow);
-	stopTask(randomWalk);
+	//stopTask(lineFollow);
+	int sonarAvg;
+	while(true) {
+		sonarAvg = getUSDistance(sonar);
+		if(sonarAvg < 90 && sonarAvg > 5) {
+			stopTask(randomWalk);
+			float actualSpeed = (sonarAvg / 90.0) * 128;
+			//writeDebugStreamLine("speed: %f", actualSpeed);
+			setMotorSpeed(leftMotor, actualSpeed);
+			setMotorSpeed(rightMotor, actualSpeed);
+		} else if(sonarAvg <= 5){
+			setMotorSpeed(leftMotor, 0);
+			setMotorSpeed(rightMotor, 0);
+			wait1Msec(2000);
+			setMotorSpeed(leftMotor, -55);
+			setMotorSpeed(rightMotor, -55);
+			wait1Msec(200);
+			randomDir();
+			startTask(randomWalk);
+		} else if(sonarAvg > 95){
+			startTask(randomWalk);
+		}
+	}
 
-	//DO the right thing
 
-	startTask(lineFollow);
-	startTask(randomWalk);
+	//startTask(lineFollow);
+
 }
 
 void setupAverages () {
