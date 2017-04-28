@@ -6,6 +6,7 @@
 
 #define COLOR_SENSOR_AVERAGE_BUFFER_LEN 10
 #define SONAR_SENSOR_AVERAGE_BUFFER_LEN 10
+#define MOVING_AVG_WEIGHT 45.0
 
 #define LOW_SPEED_WANDER 40
 #define HI_SPEED_WANDER 30
@@ -16,6 +17,34 @@ int COLOR_UPPER_BOUND = 60;
 float avgColorLeft = 0,
 			avgColorRight = 0,
       avgDist = 0;
+
+
+//this is making robot to do a random left turn.
+void turnLeft() {
+	long turnTime = 450;
+	setMotorSpeed(leftMotor, -55);
+	setMotorSpeed(rightMotor, 55);
+	wait1Msec(turnTime);
+}
+
+//this is making robot to do a random left turn.
+void turnRight() {
+	long turnTime = 450;
+	setMotorSpeed(leftMotor, 55);
+	setMotorSpeed(rightMotor, -55);
+	wait1Msec(turnTime);
+}
+
+//this will give robot a random direction.
+void randomDir() {
+	long turnProb = 0;
+	turnProb = rand() % 100;
+	if(turnProb < 50) {
+		turnLeft();
+	} else {
+		turnRight();
+	}
+}
 
 void mv (int left, int right) {
 	setMotorSpeed(leftMotor, left);
@@ -48,8 +77,16 @@ float getMovingAvg (float lastAvg, float alpha, int newestReading) {
 }
 
 void getColorAvg () {
-	avgColorLeft = getMovingAvg(avgColorLeft, 40 / 55.0, getColorReflected(colorLeft));
-	avgColorRight = getMovingAvg(avgColorRight, 40 / 55.0, getColorReflected(colorRight));
+	long r,g,b;
+	getColorRGB(colorLeft, r, g, b);
+	float cLeft = (r + g + b) / 3.0;
+
+
+	getColorRGB(colorRight, r, g, b);
+	float cRight = (r + g + b) / 3.0;
+
+	avgColorLeft = getMovingAvg(avgColorLeft, 40 /   MOVING_AVG_WEIGHT, cLeft);
+	avgColorRight = getMovingAvg(avgColorRight, 40 / MOVING_AVG_WEIGHT, cRight);
 	writeDebugStreamLine("avg c l: %f, avg c r: %f, avg dist: %f", avgColorLeft, avgColorRight, avgDist);
 }
 
@@ -100,41 +137,32 @@ task randomWalk() {
 //Are we off the line?
 bool offline () {
 	getColorAvg();
-	return avgColorLeft - COLOR_LOWER_BOUND > 10 && avgColorRight - COLOR_LOWER_BOUND > 10;
+	return fabs(avgColorLeft - COLOR_LOWER_BOUND) > 10 && fabs(avgColorRight - COLOR_LOWER_BOUND) > 10;
 }
 
 
 bool acquireLine () {
 	bool acquired = false;
-	mv(-20, 0);
+	mv(-20, 20);
   writeDebugStreamLine("Turning left");
-	for (int i = 0; i < 5 && !acquired; i++) {
+	for (int i = 0; i < 15 && !acquired; i++) {
 		//rotate left about 100
-		acquired = !offline();
+		acquired = acquired || !offline();
 
 		delay(100);
   }
 
-  mv(0, -20);
+  mv(20, -20);
   //writeDebugStreamLine("Turning right");
-  for (int i = 0; i < 10 && !acquired; i++) {
+  for (int i = 0; i < 30 && !acquired; i++) {
 		//then rotate right 200
-    acquired = !offline();
+    acquired = acquired || !offline();
 
 		delay(100);
   }
 
   return acquired;
 }
-
-void followLine () {
-	bool following = true;
-
-	while (following) {
-
-	}
-}
-
 
 void setMotorSpeedBasedOnLightSensor() {
 	int baseSpeed = 10;
@@ -158,12 +186,15 @@ void setMotorSpeedBasedOnLightSensor() {
 //White is approximately 70 +- 10
 task lineFollow () {
 	while (true) {
-		if (avgColorLeft < COLOR_LOWER_BOUND || avgColorRight < COLOR_LOWER_BOUND) {
+
+	if (fabs(avgColorLeft - COLOR_LOWER_BOUND) < 5 || fabs(avgColorRight - COLOR_LOWER_BOUND) < 10) {
 			setLEDColor(ledRedFlash);
 			stopTask(randomWalk);
 			bool online = true;
 			int offlineCount = 0;
+
 			while (online) {
+
 				setMotorSpeedBasedOnLightSensor();
 				delay(100);
 				getColorAvg();
@@ -175,78 +206,24 @@ task lineFollow () {
 			    offlineCount = 0;
 			  }
 
-			  if (offlineCount > 4) {
+
+			  if (offlineCount > 5) {
+			  	setLEDColor(ledGreenFlash);
 			  	acquireLine();
+			  	break;
 			  }
 
-			  if (offlineCount > 10) {
-			  	setLEDColor(ledGreenFlash);
-			  	goto out;
-			  }
 		  }
 
 			//followLine();
 			//DO the right thing
-		  out:
+
 			startTask(randomWalk);
 		}
+
+
 		getColorAvg();
   }
-}
-
-
-//Priority 0
-//Kill line detection to chase object and kill wander
-//3 feet is approximately 90 from the getDistance function
-task objectDetect () {
-	stopTask(lineFollow);
-	stopTask(randomWalk);
-
-	//DO the right thing
-
-	startTask(lineFollow);
-	startTask(randomWalk);
-}
-
-void setupAverages () {
-	//initialize left/right color sensor average
-	//init distance sensor average
-	int colorAvgLeft [COLOR_SENSOR_AVERAGE_BUFFER_LEN];
-	int colorAvgRight [COLOR_SENSOR_AVERAGE_BUFFER_LEN];
-	int sonarAvg [SONAR_SENSOR_AVERAGE_BUFFER_LEN];
-
-	for (int i = 0; i < COLOR_SENSOR_AVERAGE_BUFFER_LEN; i++) {
-		colorAvgLeft[i] = getColorReflected(colorLeft);
-		colorAvgRight[i] = getColorReflected(colorRight);
-  }
-
-  for (int i = 0; i < SONAR_SENSOR_AVERAGE_BUFFER_LEN; i++) {
-		sonarAvg[i] = getUSDistance(sonar);
-  }
-
-  //Gauss(10) = 55
-  float tmpSum = 0,
-  			tmpSum2;
-
-  int gSumColor = getGaussianSum(COLOR_SENSOR_AVERAGE_BUFFER_LEN),
-      gSumSonar = getGaussianSum(SONAR_SENSOR_AVERAGE_BUFFER_LEN);
-
-  for (int i = 0; i < COLOR_SENSOR_AVERAGE_BUFFER_LEN; i++) {
-  	tmpSum += getMemberOfMovingAvg(i, colorAvgLeft[i], gSumColor);
-		tmpSum2 += getMemberOfMovingAvg(i, colorAvgRight[i], gSumColor);
-  }
-  avgColorLeft = tmpSum;
-  avgColorRight = tmpSum2;
-
-  tmpSum = 0;
-  for (int i = 0; i < SONAR_SENSOR_AVERAGE_BUFFER_LEN; i++) {
-  	tmpSum += getMemberOfMovingAvg(i, sonarAvg[i], gSumSonar);
-  }
-
-  avgDist = tmpSum;
-
-
-  writeDebugStreamLine("avg c l: %f, avg c r: %f, avg dist: %f", avgColorLeft, avgColorRight, avgDist);
 }
 
 void calBlack() {
@@ -267,6 +244,42 @@ void calWhite() {
   COLOR_UPPER_BOUND = ((avgColorLeft + avgColorRight) / 2) - 10;
 }
 
+//Priority 0
+//Kill line detection to chase object and kill wander
+//3 feet is approximately 90 from the getDistance function
+task objectDetect () {
+	//stopTask(lineFollow);
+	int sonarAvg;
+	while(true) {
+		sonarAvg = getUSDistance(sonar);
+		if(sonarAvg < 90 && sonarAvg > 5) {
+			stopTask(randomWalk);
+			stopTask(lineFollow);
+			float actualSpeed = (sonarAvg / 90.0) * 128;
+			//writeDebugStreamLine("speed: %f", actualSpeed);
+			setMotorSpeed(leftMotor, actualSpeed);
+			setMotorSpeed(rightMotor, actualSpeed);
+		} else if(sonarAvg <= 5){
+			setMotorSpeed(leftMotor, 0);
+			setMotorSpeed(rightMotor, 0);
+			wait1Msec(2000);
+			setMotorSpeed(leftMotor, -55);
+			setMotorSpeed(rightMotor, -55);
+			wait1Msec(200);
+			randomDir();
+			startTask(randomWalk);
+			startTask(lineFollow);
+		} else if(sonarAvg > 95){
+			startTask(randomWalk);
+			startTask(lineFollow);
+		}
+	}
+
+
+	//
+
+}
+
 task main()
 {
 
@@ -280,7 +293,7 @@ task main()
 	calBlack();
 
 
-//	startTask(objectDetect);
+  //startTask(objectDetect);
 	startTask(lineFollow);
 	startTask(randomWalk);
 	//startTask(getColorAvg);
