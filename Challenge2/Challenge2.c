@@ -8,6 +8,7 @@
 #define SONAR_SENSOR_AVERAGE_BUFFER_LEN 10
 #define MOVING_AVG_WEIGHT 75.0
 #define LOWER_MOVING_AVG_WEIGHT 25.0
+#define REAQ_MVG_WEIGHT 45.0
 
 #define LOW_SPEED_WANDER 40
 #define HI_SPEED_WANDER 30
@@ -18,6 +19,8 @@ int COLOR_UPPER_BOUND = 60;
 float avgColorLeft = 0,
 			avgColorRight = 0,
       avgDist = 0;
+
+int sonarAvg = 255;
 
 
 //this is making robot to do a random left turn.
@@ -55,6 +58,13 @@ void mv (int left, int right) {
 
 float getMovingAvg (float lastAvg, float alpha, int newestReading) {
   return lastAvg + (alpha * (newestReading - lastAvg));
+}
+
+void getSonarAvg(float weight) {
+	int sonarVar;
+	sonarVar = getUSDistance(sonar);
+
+	sonarAvg = getMovingAvg(sonarAvg, weight / 100.0, sonarVar);
 }
 
 void getColorAvg (float weight) {
@@ -123,7 +133,18 @@ bool offline (float wt) {
 	return fabs(avgColorLeft - COLOR_LOWER_BOUND) > 3 && fabs(avgColorRight - COLOR_LOWER_BOUND) > 3;
 }
 
+//Play the sound when it's offline
+void playTheOfflineSound () {
+ 	writeDebugStreamLine("not acquired");
+  playTone(100, 25);
+  playTone(300, 25);
+  playTone(500, 25);
+  playTone(700, 25);
+}
 
+//Attempt reacquire the line.
+// First, skid steer left. If a sensor acquires black, return true
+//second turn right for double the amount
 bool acquireLine () {
 	writeDebugStreamLine("acquire line");
 	bool acquired = false;
@@ -131,7 +152,7 @@ bool acquireLine () {
 
 	for (int i = 0; i < 15 && !acquired; i++) {
 		//rotate left about 100
-		acquired = acquired || !offline(MOVING_AVG_WEIGHT);
+		acquired = acquired || !offline(REAQ_MVG_WEIGHT);
 
 		delay(100);
   }
@@ -140,27 +161,36 @@ bool acquireLine () {
   //writeDebugStreamLine("Turning right");
   for (int i = 0; i < 30 && !acquired; i++) {
 		//then rotate right 200
-    acquired = acquired || !offline(MOVING_AVG_WEIGHT);
+    acquired = acquired || !offline(REAQ_MVG_WEIGHT);
 
 		delay(100);
   }
 
   if (!acquired) {
-	  writeDebugStreamLine("not acquired");
-	  playTone(100, 25);
-	  playTone(300, 25);
-	  playTone(500, 25);
-	  playTone(700, 25);
+	  ///TODO extract to function
+   playTheOfflineSound();
 
 	  mv(-20, 20);
 	  delay(1200);
-	}
+	} else {
+		mv(10, 10);
+		for (int i = 0; i < 15; i++) {
+			delay(100);
+			getColorAvg(LOWER_MOVING_AVG_WEIGHT);
+	  }
+
+	  if (offline(LOWER_MOVING_AVG_WEIGHT)) {
+	  	acquired = false;
+	  	playTheOfflineSound();
+	  	//play the not acquired sound
+	  }
+  }
 
   return acquired;
 }
 
 void setMotorSpeedBasedOnLightSensor() {
-	int baseSpeed = 10;
+	//int baseSpeed = 10;
 
 	if (avgColorLeft - avgColorRight > 10) {
 		//this means go right
@@ -242,30 +272,49 @@ void calWhite() {
 //3 feet is approximately 90 from the getDistance function
 task objectDetect () {
 	//stopTask(lineFollow);
-	int sonarAvg;
+	bool detected;
 	while(true) {
-		getColorAvg(LOWER_MOVING_AVG_WEIGHT);
-		sonarAvg = getUSDistance(sonar);
+
+		if (detected) {
+			getSonarAvg(10.0);
+		} else {
+			delay(100);
+			getSonarAvg(15.0);
+		}
+
+		writeDebugStreamLine("snr %d", sonarAvg);
 		if(sonarAvg < 90 && sonarAvg > 5) {
+			detected = true;
 			stopTask(randomWalk);
 			stopTask(lineFollow);
+			setLEDColor(ledOff);
+
 			float actualSpeed = (sonarAvg / 90.0) * 128;
-			//writeDebugStreamLine("speed: %f", actualSpeed);
-			setMotorSpeed(leftMotor, actualSpeed);
-			setMotorSpeed(rightMotor, actualSpeed);
-		} else if(sonarAvg <= 5){
-			setMotorSpeed(leftMotor, 0);
-			setMotorSpeed(rightMotor, 0);
+			writeDebugStreamLine("speed: %f", actualSpeed);
+			mv(actualSpeed, actualSpeed);
+			delay(50);
+		} else if(sonarAvg <= 5 && detected){
+			mv(0, 0);
+
 			wait1Msec(2000);
-			setMotorSpeed(leftMotor, -55);
-			setMotorSpeed(rightMotor, -55);
+
+			mv(-55, -55);
+
+			detected = false;
+			sonarAvg = 255;
 			wait1Msec(200);
 			randomDir();
 			startTask(randomWalk);
+			delay(100);
 			startTask(lineFollow);
-		} else if(sonarAvg > 95){
+			delay(100);
+		} else if(sonarAvg > 90 && detected){
+			detected = false;
+			sonarAvg = 255;
 			startTask(randomWalk);
+			delay(100);
 			startTask(lineFollow);
+			delay(100);
 		}
 	}
 
@@ -278,19 +327,21 @@ task main()
 {
 
 
-	setLEDColor(ledGreenFlash);
-  delay(2000);
-	calWhite();
-
 	setLEDColor(ledOrangeFlash);
 	delay(2000);
 	calBlack();
 
+	setLEDColor(ledGreenFlash);
+  delay(2000);
+	calWhite();
 
-  //startTask(objectDetect);
+
 	startTask(randomWalk);
 	delay(100);
 	startTask(lineFollow);
+
+	delay(100);
+	startTask(objectDetect);
 
 	//startTask(getColorAvg);
 
