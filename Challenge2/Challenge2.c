@@ -6,8 +6,13 @@
 
 #define COLOR_SENSOR_AVERAGE_BUFFER_LEN 10
 #define SONAR_SENSOR_AVERAGE_BUFFER_LEN 10
+
 #define MOVING_AVG_WEIGHT 75.0
+
+//used when wandering
 #define LOWER_MOVING_AVG_WEIGHT 25.0
+
+//used when reacq
 #define REAQ_MVG_WEIGHT 45.0
 
 #define LOW_SPEED_WANDER 40
@@ -61,8 +66,17 @@ float getMovingAvg (float lastAvg, float alpha, int newestReading) {
 }
 
 void getSonarAvg(float weight) {
+	//so we want yet another weight which attempts to reject deviant values
+  //we can derive this weight from the newest reading's deviation from the current average
+	//This weight should have a minimum amount, should always be positive
+  // diff = min ( 1, sonarAvg - sonarVar) never let this be zero to avoid div by zero among other things
+  // weight = max ( 1, 10 / diff ); let the final weight here never be greater than one
+  // This last statement basically accepts the full weight value of deviations by
 	int sonarVar;
 	sonarVar = getUSDistance(sonar);
+
+	//float diff = min ( 1, sonarAvg - sonarVar ); //never let this be zero to avoid div by zero among other things
+  //float weight = max ( 1, 10 / diff ); //let the final weight here never be greater than one
 
 	sonarAvg = getMovingAvg(sonarAvg, weight / 100.0, sonarVar);
 }
@@ -267,6 +281,8 @@ void calWhite() {
   COLOR_UPPER_BOUND = ((avgColorLeft + avgColorRight) / 2);
 }
 
+#define STOP_DIST 14
+
 //Priority 0
 //Kill line detection to chase object and kill wander
 //3 feet is approximately 90 from the getDistance function
@@ -276,14 +292,14 @@ task objectDetect () {
 	while(true) {
 
 		if (detected) {
-			getSonarAvg(10.0);
+			getSonarAvg(50.0);
 		} else {
 			delay(100);
 			getSonarAvg(15.0);
 		}
 
 		writeDebugStreamLine("snr %d", sonarAvg);
-		if(sonarAvg < 90 && sonarAvg > 5) {
+		if(sonarAvg < 90 && sonarAvg > STOP_DIST) {
 			detected = true;
 			stopTask(randomWalk);
 			stopTask(lineFollow);
@@ -292,8 +308,8 @@ task objectDetect () {
 			float actualSpeed = (sonarAvg / 90.0) * 128;
 			writeDebugStreamLine("speed: %f", actualSpeed);
 			mv(actualSpeed, actualSpeed);
-			delay(50);
-		} else if(sonarAvg <= 5 && detected){
+			delay(10);
+		} else if(sonarAvg <= STOP_DIST && detected){
 			mv(0, 0);
 
 			wait1Msec(2000);
@@ -325,8 +341,6 @@ task objectDetect () {
 
 task main()
 {
-
-
 	setLEDColor(ledOrangeFlash);
 	delay(2000);
 	calBlack();
