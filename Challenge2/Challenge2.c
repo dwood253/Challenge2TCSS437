@@ -1,21 +1,31 @@
-#
-pragma config(Sensor, S1, colorLeft, sensorEV3_Color)# pragma config(Sensor, S3, colorRight, sensorEV3_Color)# pragma config(Sensor, S2, sonar, sensorEV3_Ultrasonic)# pragma config(Motor, motorA, leftMotor, tmotorEV3_Large, PIDControl, encoder)# pragma config(Motor, motorD, rightMotor, tmotorEV3_Large, PIDControl, encoder)
+#pragma config(Sensor, S1, colorLeft, sensorEV3_Color)
+#pragma config(Sensor, S3, colorRight, sensorEV3_Color)
+#pragma config(Sensor, S2, sonar, sensorEV3_Ultrasonic)
+#pragma config(Motor, motorA, leftMotor, tmotorEV3_Large, PIDControl, encoder)
+#pragma config(Motor, motorD, rightMotor, tmotorEV3_Large, PIDControl, encoder)
 
 //This is used for the initial calibration. It was initially thought that this would be used in more instances
 //This was not the case, but there's no sense in removing it now.
-# define COLOR_SENSOR_AVERAGE_BUFFER_LEN 10# define SONAR_SENSOR_AVERAGE_BUFFER_LEN 10
+
+#define COLOR_SENSOR_AVERAGE_BUFFER_LEN 10
+#define SONAR_SENSOR_AVERAGE_BUFFER_LEN 10
 
 //The weight of new values when following a line. A higher weight allows for more precise line following.
-# define MOVING_AVG_WEIGHT 75.0
+
+#define MOVING_AVG_WEIGHT 75.0
 
 //Weight used when wandering. This weight is lower in order to ignore wrinkles contacting the light sensor.
-# define LOWER_MOVING_AVG_WEIGHT 25.0
+
+#define LOWER_MOVING_AVG_WEIGHT 25.0
 
 //Needed a middling weight for reacquiring lines. This turned out to be a good weight.
-# define REAQ_MVG_WEIGHT 45.0
+
+#define REAQ_MVG_WEIGHT 45.0
 
 //These are the motor speeds alternated between when randomly wandering
-# define LOW_SPEED_WANDER 40# define HI_SPEED_WANDER 30
+
+#define LOW_SPEED_WANDER 40
+#define HI_SPEED_WANDER 30
 
 //Some default values for upper and lower bound colors, but this is dynamically set on startup.
 //The lower bound which determines what reading we consider to be black
@@ -24,11 +34,18 @@ int COLOR_LOWER_BOUND = 5;
 //Actual working values for white are reading around 20-30
 int COLOR_UPPER_BOUND = 60;
 
-//These globals track the average for color and distance. 
+//These globals track the average for color and distance.
 //These values are modified when accessing the get*Avg() functions
 float avgColorLeft = 0,
     avgColorRight = 0;
 int sonarAvg = 255;
+
+
+//Helper function for a really terse way to set both motor speeds
+void mv(int left, int right) {
+    setMotorSpeed(leftMotor, left);
+    setMotorSpeed(rightMotor, right);
+}
 
 //Helper function for performing a left turn, in place
 void turnLeft() {
@@ -55,20 +72,14 @@ void randomDir() {
     }
 }
 
-//Helper function for a really terse way to set both motor speeds
-void mv(int left, int right) {
-    setMotorSpeed(leftMotor, left);
-    setMotorSpeed(rightMotor, right);
-}
-
-//Get a moving average with the last average taken (lastAvg), 
+//Get a moving average with the last average taken (lastAvg),
 //the alpha weight desired and the newest reading.
 float getMovingAvg(float lastAvg, float alpha, int newestReading) {
     return lastAvg + (alpha * (newestReading - lastAvg));
 }
 
 //Sets the moving average for sonar
-//In the body is an unused technique to discard outliers by weighting them inversely to 
+//In the body is an unused technique to discard outliers by weighting them inversely to
 //how far away from the average they are.
 void getSonarAvg(float weight) {
     //so we want yet another weight which attempts to reject deviant values
@@ -87,7 +98,7 @@ void getSonarAvg(float weight) {
 }
 
 //Set the color average with the given weight
-//Using only the green and blue channel values because red returns with less dynamic range and 
+//Using only the green and blue channel values because red returns with less dynamic range and
 //drags the whole average down.
 void getColorAvg(float weight) {
     long r, g, b;
@@ -187,13 +198,13 @@ bool acquireLine() {
     }
 
     if (!acquired) {
-        //If we haven't yet acquired the line, play the sound, 
+        //If we haven't yet acquired the line, play the sound,
         //return the robot back to center from where it began turning
         playTheOfflineSound();
         mv(-20, 20);
         delay(1200);
     } else {
-        //Otherwise we have acquired the line, try moving forward for 
+        //Otherwise we have acquired the line, try moving forward for
         //a moment and straight from the direction we acquired the line
         //This will help us leave the fat lines
         mv(10, 10);
